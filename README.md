@@ -3,3 +3,5 @@ Uses short microscopy videos capturing the dynamics of RNAP within E. Coli to cl
 
 Uses Matlab 2022b
 SMeagol and smoldyn must also be installed to simulate data
+
+The saved model needs to be copied to somewhere on the local drive - not from a server.
