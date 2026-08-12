@@ -18,7 +18,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from pretty_confusion_matrix import pp_matrix, pp_matrix_from_data
 from sklearn.metrics import confusion_matrix
 
-EPOCHS = 50
+EPOCHS = 30
 BATCH_SIZE = 8
 FRAMES = 5
 HEIGHT = 44
@@ -28,7 +28,7 @@ CHANNELS = 1
 def load_segment(path): # load a segment of frames from a tif file and convert to numpy array
     path = path.numpy().decode("utf-8")
     with Image.open(path) as img:
-        frames = [np.array(frame.convert("L"), dtype=np.float32) for frame in ImageSequence.Iterator(img)]
+        frames = [np.array(frame, dtype=np.float32) for frame in ImageSequence.Iterator(img)]
 
     if len(frames) != FRAMES:
         raise ValueError(f"Expected {FRAMES} frames, but found {len(frames)} in {path}")

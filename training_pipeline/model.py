@@ -23,7 +23,7 @@ class Conv2Plus1D(keras.layers.Layer):  # from online tensorflow article
         return self.seq(x)
 
 
-def model_simple(frame = 3, height=44, width=16, channels = 1):
+def model_simple(frame = 5, height=44, width=16, channels = 1):
     model = keras.Sequential([
         keras.Input(shape=(frame, height, width, channels)),
 
