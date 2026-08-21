@@ -1,18 +1,15 @@
 from os import name
 
 import model
-from model import model_simple
 
 import keras
 import tensorflow as tf
 #from keras import ops
 
 import tqdm
-from tqdm.keras import TqdmCallback
 import numpy as np
 from pathlib import Path
 from PIL  import Image, ImageSequence
-import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from pretty_confusion_matrix import pp_matrix, pp_matrix_from_data
@@ -20,12 +17,35 @@ from sklearn.metrics import confusion_matrix
 
 from model import Conv2Plus1D
 
-EPOCHS = 20
+EPOCHS = 12
 BATCH_SIZE = 8
 FRAMES = 5
 HEIGHT = 44
 WIDTH = 16
 CHANNELS = 1
+
+def custom_loss(cost_matrix):
+    cost_matrix = tf.constant(cost_matrix, dtype=tf.float32)
+    num_classes = 3
+    def loss(y_true, y_pred):
+        # y true is the categorical labels
+        y_true = tf.cast(tf.reshape(y_true, [-1]), dtype = tf.int32)
+        # y pred is the normalised softmax probabilities, clipped so we don't break the log function
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1-1e-7)
+        
+        y_true_onehot = tf.one_hot(y_true, depth = num_classes)
+        # calculate cross entropy
+        # cross_entropy = - tf.math.log(tf.gather(y_pred, y_true, batch_dims=1))
+
+        cross_entropy = -tf.reduce_sum(y_true_onehot * tf.math.log(y_pred), axis=1)
+        sample_cost_rows = tf.gather(cost_matrix, y_true)
+        wrong_mask = 1.0 - y_true_onehot
+        penalty = tf.reduce_sum(sample_cost_rows * y_pred * wrong_mask, axis = 1)
+        return cross_entropy + penalty
+
+    return loss
+    
+
 
 def load_segment(path): # load a segment of frames from a tif file and convert to numpy array
     path = path.numpy().decode("utf-8")
@@ -106,6 +126,20 @@ if __name__ == "__main__":
     train_ds = train_ds.map(tf_load_segment, num_parallel_calls = tf.data.AUTOTUNE)
     val_ds = val_ds.map(tf_load_segment, num_parallel_calls = tf.data.AUTOTUNE)
 
+    data_augmentation = tf.keras.Sequential([
+        tf.keras.layers.RandomFlip('vertical'),
+        tf.keras.layers.RandomRotation(0.1),
+        tf.keras.layers.RandomZoom(0.1),
+        tf.keras.layers.RandomContrast(0.1)
+    ])
+
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    train_ds = train_ds.map(
+        lambda x, y: (data_augmentation(x, training=True), y),
+        num_parallel_calls=AUTOTUNE
+    ).prefetch(AUTOTUNE)
+
     train_ds = (
         train_ds
         .shuffle(buffer_size=(total - val_size), seed=811, reshuffle_each_iteration=True)
@@ -125,30 +159,35 @@ if __name__ == "__main__":
         print(f"Shape of x: {x.shape}")
         print(f"Shape of y: {y.shape}")#
 
-    model = keras.saving.load_model(r"C:\Users\jesu4837\Downloads\model_local_store\aug_17.keras",
+    model_loaded = keras.saving.load_model(r"C:\Users\jesu4837\Downloads\model_local_store\aug_17.keras",
                                               custom_objects = {"Conv2Plus1D": Conv2Plus1D} )
 
-    for layer in model.layers:
+
+    for layer in model_loaded.layers:
         layer.trainable = False
 
-    for layer in model.layers[-2:]:
+    for layer in model_loaded.layers[-2:]:
         layer.trainable = True
 
-    model.compile(optimizer = keras.optimizers.Adam(learning_rate=1e-3), loss = keras.losses.SparseCategoricalCrossentropy(), metrics = ["accuracy"])
+    cost_matrix = np.array([[0, 1, 1], [1, 0, 1.2], [1, 1.2, 0]])
+    weighted_loss = custom_loss(cost_matrix)
 
-    history = model.fit(
+
+    model_loaded.compile(optimizer = keras.optimizers.Adam(learning_rate=5e-4), loss = weighted_loss, metrics = ["accuracy"])
+
+    history = model_loaded.fit(
         train_ds, 
         validation_data = val_ds, 
-        epochs = 15,
+        epochs = EPOCHS,
         batch_size = 8
     )
 
-    model.save(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\models\aug_17_fine_tuned.keras")
+    model_loaded.save(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\models\aug_17_fine_tuned.keras")
 
     y_true = [] 
     y_pred = [] 
     for x_batch, y_batch in val_ds: 
-        preds = model.predict(x_batch, verbose=0) # shape (batch, 3) softmax probs 
+        preds = model_loaded.predict(x_batch, verbose=0) # shape (batch, 3) softmax probs 
         y_pred.extend(np.argmax(preds, axis=1)) # convert to class indices 
         y_true.extend(y_batch.numpy()) 
 
