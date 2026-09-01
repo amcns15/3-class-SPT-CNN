@@ -1,52 +1,32 @@
-import os
-from PIL import Image, ImageSequence
+import tifffile
 from pathlib import Path
-
+import os
 
 def split_tif(states_dict, output_dir, frames_per_segment=5):
-    # if not os.path.isfile(input_path):
-    #     raise FileNotFoundError(f"Input file not found: {input_path}")
-
-    print("here!")
-
     for state, path in states_dict.items():
-
-        output_folder = output_dir + f"/{state}"
+        output_folder = os.path.join(output_dir, state)
         os.makedirs(output_folder, exist_ok=True)
 
         input_path = Path(path)
 
-        for video in input_path.glob("*.tif"):
-
+        for video in input_path.glob("*.tif"): # loop through directory for each class
             base_name = video.stem
 
-            with Image.open(video) as img:
-                frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
+            frames = tifffile.imread(video) # open with tiff
+            total_frames = frames.shape[0]
 
-            total_frames = len(frames)
-            # if total_frames == 0:
-            #     print("No frames found in the TIFF file.")
-            #     return
-
-            print(f"Found {total_frames} frame(s) in '{input_path}'.")
+            print(f"Found {total_frames} frame(s) in '{video}'.")
 
             segment_index = 1
-            for start in range(0, total_frames - (total_frames % frames_per_segment), frames_per_segment):  #modulo makes sure we get a full x frame video
+            for start in range(0, total_frames - (total_frames % frames_per_segment), frames_per_segment): # discard frames at the end if there is not a multiple of 5
                 segment_frames = frames[start:start + frames_per_segment]
                 out_path = os.path.join(
                     output_folder, f"{base_name}_segment_{segment_index:03d}.tif"
                 )
 
-                if len(segment_frames) == 1:
-                    segment_frames[0].save(out_path)
-                else:
-                    segment_frames[0].save(
-                        out_path,
-                        save_all=True,
-                        append_images=segment_frames[1:],
-                    )
+                tifffile.imwrite(out_path, segment_frames)  # store chunk
 
-                print(f"Saved {len(segment_frames)} frame(s) -> {out_path}")
+                print(f"Saved {segment_frames.shape[0]} frame(s) -> {out_path}")
                 segment_index += 1
 
             print(f"Done. {segment_index - 1} segment file(s) written to '{output_folder}'.")

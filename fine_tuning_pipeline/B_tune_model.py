@@ -17,14 +17,14 @@ from sklearn.metrics import confusion_matrix
 
 from model import Conv2Plus1D
 
-EPOCHS = 12
+EPOCHS = 100
 BATCH_SIZE = 8
 FRAMES = 5
 HEIGHT = 44
 WIDTH = 16
 CHANNELS = 1
 
-def custom_loss(cost_matrix):
+def custom_loss(cost_matrix): # weighted loss function
     cost_matrix = tf.constant(cost_matrix, dtype=tf.float32)
     num_classes = 3
     def loss(y_true, y_pred):
@@ -45,29 +45,6 @@ def custom_loss(cost_matrix):
 
     return loss
     
-
-
-def load_segment(path): # load a segment of frames from a tif file and convert to numpy array
-    path = path.numpy().decode("utf-8")
-    with Image.open(path) as img:
-        frames = [np.array(frame, dtype=np.float32) for frame in ImageSequence.Iterator(img)]
-
-    if len(frames) != FRAMES:
-        raise ValueError(f"Expected {FRAMES} frames, but found {len(frames)} in {path}")
-
-    arr = np.stack(frames, axis = 0)
-
-    arr = np.expand_dims(arr, axis=-1)  # add channel dimension
-    arr /= 255.0  
-
-    
-    # image_min = arr.min()
-    # image_max = arr.max()
-
-    # print(image_max, image_min)
-
-    return arr
-
 def tf_load_segment(path, label): # sandwich the load_segment function in a tf.py_function to use in a tf.data.Dataset
     arr = tf.py_function(
         func = load_segment, 
@@ -78,6 +55,29 @@ def tf_load_segment(path, label): # sandwich the load_segment function in a tf.p
     arr.set_shape([FRAMES, HEIGHT, WIDTH, CHANNELS])
 
     return arr, label
+
+def load_segment(path):
+    path = path.numpy().decode("utf-8")
+    with Image.open(path) as img:
+        frames = []
+        for frame in ImageSequence.Iterator(img):
+            if frame.mode == "I;16B": # converit special case of format, although most videos should be I;16 if taken from original tiff file
+                raw = frame.tobytes()
+                arr16 = np.frombuffer(raw, dtype=">u2").reshape(frame.size[1], frame.size[0])
+                frames.append(arr16.astype(np.float32))
+            else:
+                # covers "I;16" and other modes PIL can already decode
+                frames.append(np.array(frame, dtype=np.float32))
+
+    if len(frames) != FRAMES:
+        raise ValueError(f"Expected {FRAMES} frames, but found {len(frames)} in {path}")
+
+    arr = np.stack(frames, axis=0)
+    arr = np.expand_dims(arr, axis=-1)
+    arr /= 65535.0 # normalise
+
+    return arr
+
 
 def create_sets(root):
 
@@ -127,8 +127,8 @@ if __name__ == "__main__":
     val_ds = val_ds.map(tf_load_segment, num_parallel_calls = tf.data.AUTOTUNE)
 
     data_augmentation = tf.keras.Sequential([
-        tf.keras.layers.RandomFlip('vertical'),
-        tf.keras.layers.RandomRotation(0.1),
+        # tf.keras.layers.RandomFlip('vertical'),
+        # tf.keras.layers.RandomRotation(0.1),
         tf.keras.layers.RandomZoom(0.1),
         tf.keras.layers.RandomContrast(0.1)
     ])
@@ -159,30 +159,51 @@ if __name__ == "__main__":
         print(f"Shape of x: {x.shape}")
         print(f"Shape of y: {y.shape}")#
 
-    model_loaded = keras.saving.load_model(r"C:\Users\jesu4837\Downloads\model_local_store\aug_17.keras",
+    model_loaded = keras.saving.load_model(r"C:\Users\jesu4837\Downloads\model_local_store\aug_26.keras",
                                               custom_objects = {"Conv2Plus1D": Conv2Plus1D} )
 
 
     for layer in model_loaded.layers:
         layer.trainable = False
+        # if isinstance(layer, tf.keras.layers.BatchNormalization):
+        #     layer.trainable = True
 
+    # then re-apply your intended trainable = True for the last 2 layers
     for layer in model_loaded.layers[-2:]:
         layer.trainable = True
 
-    cost_matrix = np.array([[0, 1, 1], [1, 0, 1.2], [1, 1.2, 0]])
+    cost_matrix = np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]])
     weighted_loss = custom_loss(cost_matrix)
 
 
-    model_loaded.compile(optimizer = keras.optimizers.Adam(learning_rate=5e-4), loss = weighted_loss, metrics = ["accuracy"])
+    model_loaded.compile(optimizer = keras.optimizers.Adam(learning_rate=1e-3), loss = keras.losses.SparseCategoricalCrossentropy(), metrics = ["accuracy"])
+
+    callbacks = [ # help prevent overfitting
+        keras.callbacks.ModelCheckpoint( # keep best model parameters based on validation loss
+            "best_model.keras",
+            save_best_only = True,
+            monitor = "val_loss"
+        ),
+        keras.callbacks.EarlyStopping( # stop if validatin loss stops improving
+            monitor = "val_loss",
+            patience = 5,
+            restore_best_weights = True
+        )
+    ]
 
     history = model_loaded.fit(
         train_ds, 
         validation_data = val_ds, 
         epochs = EPOCHS,
-        batch_size = 8
+        batch_size = 8,
+        callbacks = callbacks
     )
 
-    model_loaded.save(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\models\aug_17_fine_tuned.keras")
+    model_loaded.save(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\models\aug_26_fine_tuned.keras")
+
+    # model_loaded = keras.saving.load_model(r"H:\summer_internship\best_model.keras",
+    #                                         compile = False,
+    #                                        custom_objects = {"Conv2Plus1D": Conv2Plus1D} )
 
     y_true = [] 
     y_pred = [] 
