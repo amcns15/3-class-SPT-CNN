@@ -10,7 +10,7 @@ from itertools import groupby
 import matplotlib.pyplot as plt
 import os
 
-def get_square_psf(coord, shape):
+def get_square_psf(coord, shape): # doesn't work, much cruder method for fitting psf
     OFFSETS = np.array([(-1,-1), (-1, 0), (-1,1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)])
     coord = np.array(coord)
     neighbors = coord + OFFSETS
@@ -19,7 +19,7 @@ def get_square_psf(coord, shape):
 
     return neighbors[valid]
 
-def estimate_std_from_fwhm(profile, peak_idx, background):
+def estimate_std_from_fwhm(profile, peak_idx, background): # used to estimate inital parameters for fit
     peak_val = profile[peak_idx]
     half_max = background + (peak_val - background) / 2
 
@@ -40,7 +40,7 @@ def estimate_std_from_fwhm(profile, peak_idx, background):
     return min(10, sigma_bound_lower)
 
 
-def gaussian_2d(coords, amplitude, x0, y0, sigma_x, sigma_y, offset):
+def gaussian_2d(coords, amplitude, x0, y0, sigma_x, sigma_y, offset): # fitting fucntion
     x, y = coords
     exponent = -(((x - x0)**2) / (2 *  sigma_x**2) + ((y - y0)**2) / (2 * sigma_y**2))
     return offset + amplitude * np.exp(exponent)
@@ -58,13 +58,13 @@ def get_gaussian_psf(slice_2d):
     y_flat = y_grid.ravel()
     z_flat = slice_2d.ravel()
 
-    y0_guess, x0_guess = np.unravel_index(np.argmax(slice_2d), slice_2d.shape)
+    y0_guess, x0_guess = np.unravel_index(np.argmax(slice_2d), slice_2d.shape)  # guess the centre as the position with peak intensity
     background =  slice_2d.min()
 
     row_profile = slice_2d[y0_guess, :] # horizontal profile
     col_profile = slice_2d[:, x0_guess] # verical profile
 
-    sigma_x_guess = estimate_std_from_fwhm(row_profile, x0_guess, background)
+    sigma_x_guess = estimate_std_from_fwhm(row_profile, x0_guess, background)  # estimate std
     sigma_y_guess = estimate_std_from_fwhm(col_profile, y0_guess, background)
 
     initial_guess = (
@@ -76,32 +76,21 @@ def get_gaussian_psf(slice_2d):
         background  #offset
     )
 
-    #print(initial_guess)
-
     try:
-        popt, pcov = curve_fit(gaussian_2d, (x_flat, y_flat), z_flat, p0=initial_guess, bounds = ([0, 0, 0, 0.3, 0.3, 0], [65535, x_size, y_size, 10, 20, 65535]) )
+        popt, pcov = curve_fit(gaussian_2d, (x_flat, y_flat), z_flat, p0=initial_guess, bounds = ([0, 0, 0, 0.3, 0.3, 0], [65535, x_size, y_size, 10, 20, 65535]) ) # try to fit gaussian
     except RuntimeError:
         print("Gaussian fit failed")
         return None
     
-
     amplitude, x0, y0, sigma_x, sigma_y, offset = popt
-    distance_in_std = np.sqrt(((x_grid - x0) / sigma_x)**2 + ((y_grid - y0) / sigma_y)**2)
+    distance_in_std = np.sqrt(((x_grid - x0) / sigma_x)**2 + ((y_grid - y0) / sigma_y)**2) #threshold only pixels within 1std of the centre of the gaussian
     mask = distance_in_std <= 1
-    #coords = np.argwhere(mask)
 
     return mask
 
-def make_confinement_violin_plot(input_array, chunk_dict, images, vid_name, plot_dir, brightness_threshold=350):
-    """
-    For a given video, build one violin plot per label, where each violin
-    shows the distribution of confinement (spot) sizes for that label across
-    its chunks. Size = number of pixels in the integrated (summed then
-    binarized) spot image, i.e. the footprint of the spot across the frames
-    in that chunk. Chunks whose mean raw brightness (under the spot mask,
-    across their frames) exceeds brightness_threshold are excluded.
-    """
-    label_sizes = {}   # label -> list of sizes
+def make_confinement_violin_plot(input_array, chunk_dict, images, vid_name, plot_dir, size_threshold=100):
+
+    label_sizes = {}   #label and  list of sizes
     excluded = 0
 
     for key, chunks in chunk_dict.items():
@@ -116,37 +105,57 @@ def make_confinement_violin_plot(input_array, chunk_dict, images, vid_name, plot
             if size == 0:
                 continue
 
-            # brightness = mean raw intensity under the spot, over its frames
-            region_frames = input_array[indices]  # shape (n_frames, H, W)
-            brightness = region_frames[:, mask].mean()
-
-            # if brightness > brightness_threshold:
-            #     excluded += 1
-            #     continue
+            if size > size_threshold:
+                excluded += 1
+                continue
 
             label_sizes.setdefault(key, []).append(size)
 
+    print(f"Excluded {excluded} regions with size > {size_threshold} for {vid_name}")
+
     if not label_sizes:
-        print(f"No regions left for {vid_name} after excluding brightness > {brightness_threshold}")
+        print(f"No regions left for {vid_name} after excluding size > {size_threshold}")
         return
 
     labels = sorted(label_sizes.keys())
     data = [label_sizes[lab] for lab in labels]
 
+    # map label -> color; falls back to grey if a label doesn't match any known category
+    color_map = {"free": "tab:blue", "confined": "tab:green", "bound": "tab:red"}
+    colors = [color_map.get(lab.lower(), "tab:grey") for lab in labels]
+
+    quantile_lines = [0, 0.25, 0.5, 0.75, 1.0]
+    quantiles_per_violin = [quantile_lines] * len(data)
+
     fig, ax = plt.subplots(figsize=(max(6, len(labels) * 0.8), 5))
     positions = np.arange(1, len(labels) + 1)
-    parts = ax.violinplot(data, positions=positions, showmeans=True, showmedians=True)
+    parts = ax.violinplot(
+        data,
+        positions=positions,
+        showmeans=True,
+        showmedians=False,     # replaced by the quantiles
+        showextrema=False,    
+        quantiles=quantiles_per_violin
+    )
+
+
+    # color each violin body according to its label
+    for body, color in zip(parts['bodies'], colors):
+        body.set_facecolor(color)
+        body.set_edgecolor("black")
+        body.set_alpha(0.7)
+
+        parts["cmeans"].set_edgecolor("black")
+        parts["cquantiles"].set_edgecolor("gray")
+
 
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, rotation=45, ha="right")
     ax.set_ylabel("Confinement size (pixels)")
-    ax.set_title(f"Confinement size distribution by label — {vid_name}\n"
-                 f"(excluded {excluded} outliers, brightness > {brightness_threshold})")
+    ax.set_title(f"Confinement size distribution by label, for sample no. {vid_name.split('_')[0]}")
     fig.tight_layout()
     fig.savefig(os.path.join(plot_dir, f"{vid_name}_confinement_violin.png"))
     plt.close(fig)
-
-    return
 
 def create_clean_array(input_array, per_frame_label, output_dir, vid_name, plot_dir):
 
@@ -154,13 +163,12 @@ def create_clean_array(input_array, per_frame_label, output_dir, vid_name, plot_
 
     output_array = np.zeros_like(input_array)
 
-    for i, slice_2d in enumerate(input_array): # colour the ouput array with where the molecule is, a clean 3x3 square
+    for i, slice_2d in enumerate(input_array): # colour the ouput array with where the molecule id by fitting a gaussian
         max_coords = np.unravel_index(np.argmax(slice_2d), slice_2d.shape)
-        # output_array[i, max_coords[0], max_coords[1]] = 1
         mask = get_gaussian_psf(slice_2d)
 
         if mask is None:
-            plt.imsave(rf"H:\summer_internship\analysis\failed_frames\frame{i}_failed.png", slice_2d, cmap = "gray")
+            plt.imsave(rf"H:\summer_internship\analysis\failed_frames\frame{i}_failed.png", slice_2d, cmap = "gray") # save frames that didnt work for debugging
             continue
 
         output_array[i, mask] = 1
@@ -199,9 +207,10 @@ def create_clean_array(input_array, per_frame_label, output_dir, vid_name, plot_
     vid_output_dir = os.path.join(output_dir, vid_name)
     os.makedirs(vid_output_dir, exist_ok=True)
 
+    #script to make bar graph for size of psf in each sample, coloured by label. Mostly used to debug...
 
     for key, img in images.items(): 
-        y.append(np.sum(img)) # fixed: scalar pixel count, not sum(img) 
+        y.append(np.sum(img)) # scalar pixel count
         labels.append(key) 
         base_labels.append(key.rsplit("_", 3)[0]) # strip off "_i_size_n" to get the raw label 
         plt.imsave(os.path.join(vid_output_dir, f"{key}.png"), img, cmap="gray") 
@@ -218,10 +227,10 @@ def create_clean_array(input_array, per_frame_label, output_dir, vid_name, plot_
     ax.set_xticks(x) 
     ax.set_xticklabels(labels, rotation=90, fontsize=7) 
     ax.set_ylabel("PSF pixel count") 
-    ax.set_title(vid_name) # legend for the label colours 
+    ax.set_title(vid_name)
 
     handles = [plt.Rectangle((0, 0), 1, 1, color=colour_map[lab]) for lab in unique_labels] 
-    ax.legend(handles, unique_labels, title="label", loc="upper right", fontsize=8) 
+    ax.legend(handles, unique_labels, title="label", loc="upper right", fontsize=8)  # legend for label colours 
     fig.tight_layout() 
     fig.savefig(os.path.join(plot_dir, f"{vid_name}_plot.png"))
     print("saved!")
@@ -257,7 +266,7 @@ if __name__ == "__main__":
 
 
         output_array, chunk_dict, images = create_clean_array(input_video, per_frame_label, output_dir, vid_stem, plot_dir)
-        make_confinement_violin_plot(input_video, chunk_dict, images, vid_stem, r"H:\summer_internship\analysis\violin_plots", brightness_threshold=350)
+        make_confinement_violin_plot(input_video, chunk_dict, images, vid_stem, r"H:\summer_internship\analysis\violin_plots")
 
     plt.show()
 
