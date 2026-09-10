@@ -16,15 +16,14 @@ import random
 
 def run_simulations(no_batches, state_ranges):
 
-    output_dir = Path(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\simulation_pipeline\smoldyn_output\confined_output")
+    output_dir = Path(r"\\rivendell.physics.ox.ac.uk\user\students\2024\jesu4837\summer_internship\simulation_pipeline\smoldyn_output")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for state, (low, high) in state_ranges.items():
 
         # 100 poisson-distributed coefficients across the given range
-        difc_values = np.random.poisson(0.36, no_batches) # Generate Poisson-distributed values
+        difc_values = np.random.poisson(0.11, no_batches) # Generate Poisson-distributed values
         difc_values = np.clip(difc_values, low, high) # Ensure values are within the specified range
-
 
         for num, difc in enumerate(tqdm(difc_values)):
 
@@ -32,12 +31,12 @@ def run_simulations(no_batches, state_ranges):
             y_origin = random.uniform(-0.2, 0.2)
             z_origin = random.uniform(-0.2, 0.2)
 
-            x_min = x_origin - 0.065
-            x_max = x_origin + 0.065
-            y_min = y_origin - 0.065
-            y_max = y_origin + 0.065
-            z_min = z_origin - 0.065
-            z_max = z_origin + 0.065
+            x_min = x_origin - 0.04
+            x_max = x_origin + 0.04
+            y_min = y_origin - 0.04
+            y_max = y_origin + 0.04
+            z_min = z_origin - 0.04
+            z_max = z_origin + 0.04
 
             # creating a separate simulation for each run
             sim = smoldyn.Simulation(
@@ -84,7 +83,7 @@ if __name__ == "__main__":
 
     # (low, high) diffusion coefficient ranges for each state
     state_ranges = {
-        "confined": (0.7, 1.2),
+        "bound": (0, 0.19),
     }
 
     run_simulations(no_batches, state_ranges)
