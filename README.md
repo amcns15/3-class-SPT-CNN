@@ -25,9 +25,12 @@ The three way classifier is much better
 There is also a two state model for comparison.
 
 
-## INFERENCE
+## INFERENCE /  RUNNING THE MODEL
 The saved model needs to be copied to somewhere on the local drive - not from a server.  
-The contrast of the input you are predicting on will skew the results. SNR ratio needs to be somewhat similar to the simulated data.  
+To run the model it also needs ti have a copy of the architecture of the model in the same folder, so that it can read in the custom convolutional layer defined in the model script. 
+The contrast of the input you are predicting on will skew the results. SNR ratio needs to be somewhat similar to the simulated data.    
+
+run_model.py is theprimary script. You can comment and uncomment the various methods of visualisng the data.   
 
 There are a few lines you can comment or uncomment in the run_model script to determine if you want to use some simple post processing and change obviously erroneous labels.  
 
