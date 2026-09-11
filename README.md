@@ -31,5 +31,10 @@ There are a few lines you can comment or uncomment in the run_model script to de
 
 You can also apply a 'sliding window' prediction to predicit on 5 frames, shift one, and predict on the next set of 5 frames.  
 
-There are several ways to visualise the data. The easiest way is using kymographs (in some of the scripts it is spelt as khymographs), these can be displayed with or without a bar graph below showing the confidence in each prediction.
+There are several ways to visualise the data. The easiest way is using kymographs (in some of the scripts it is spelt as khymographs), these can be displayed with or without a bar graph below showing the confidence in each prediction. Without the bar graph it is saved as a tiff file, so easier to analyse.
+
+Or you can label the video itself, by tinting it, or displaying a letter on the screen. 
+
+The labels can also be saved to a csv
+
 
