@@ -14,7 +14,7 @@ Diffusion coefficients are selected from a Poisson distribution using parameters
 
 Outputting all these trajectories into the same folder and then letting the script labelled C sort them and reformat them is easiest.  
 
-The script labelled D generates the smeagol files, this takes ~30mins for 100x 100 frame videos, for each state.  
+The script labelled D generates the smeagol files, for each state this takes ~30mins for 100x 100 frame videos. 
 
 The script E cuts these into 5 frame chunks and deposits them into a separate training data file.  
 
