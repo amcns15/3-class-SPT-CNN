@@ -9,7 +9,9 @@ Uses Matlab 2022b
 *SMeagol and smoldyn must also be installed to simulate data*
 
 There are separate scripts for each state to generate the smoldyn trajectory simulation, (Labelled A, AB, B).  
-Diffusion coefficients are selected from 
+
+Diffusion coefficients are selected from a Poisson distribution using parameters found in previous experiments. 
+
 Outputting all these trajectories into the same folder and then letting the script labelled C sort them and reformat them is easiest.  
 
 The script labelled D generates the smeagol files, this takes ~30mins for 100x 100 frame videos, for each state.  
